@@ -40,12 +40,15 @@ def year_based_significance_regression(file_path):
 
     data = pandas.DataFrame.from_csv(file_path, index_col = None)
     data['age'] = data['yearID'] - data['birthYear']
-    cols = COLS
-    cols.append('age')
+    cols = ['G_batting', 'AB', 'R', 'H', 'X2B', 'X3B', 'HR', 'RBI','SB', 
+            'CS', 'BB', 'SO', 'IBB', 'HBP', 'SH', 'SF', 'GIDP', 'teamID',
+            'salary', 'yearID', 'age']
+
     all_data = data[cols].copy()
     all_data.dropna(inplace = True)
     teams = pandas.get_dummies(all_data['teamID'])
-    x_cols = all_data.columns[map(lambda x: x not in ['teamID', 'salary'], all_data.columns)]
+    x_cols = all_data.columns[map(lambda x: x not in ['teamID', 'salary'],
+                                  all_data.columns)]
     xs = all_data[x_cols].join(teams)
     ys = all_data['salary']
     N = xs.shape[0]
@@ -65,13 +68,80 @@ def year_based_significance_regression(file_path):
 
         clf = ensemble.RandomForestRegressor(n_estimators = 15)
         clf.fit(in_sample.loc[is_yr, is_sig], ys[isi][is_yr])
-        print "For year " + str(year)
         is_score = clf.score(in_sample.loc[is_yr, is_sig], ys[isi][is_yr])
-        print "in-sample" + '\t' + str(is_score)
         d_too['is-r2'] = is_score
         os_score = clf.score(out_sample.loc[os_yr, is_sig], ys[osi][os_yr])
-        print "out-of-sample" + '\t' + str(os_score)
         d_too['os-r2'] = os_score
+        eps = ys[osi][os_yr].sub(clf.predict(out_sample.loc[os_yr, is_sig]))
+        d_too['mae'] = eps.abs().sum()/(len(ys[osi][os_yr]) - 2.)
+
+        d[year] = pandas.Series(d_too)
+
+    return pandas.DataFrame(d).transpose()
+
+def year_based_significance_log_regression(file_path):
+    """
+    Run a year-based multivariate regression that uses only the significant variables
+    as well as Random Forest Regression Trees to estimate the parameters
+
+    Args:
+    ------
+    - file_path: string of the location of `baseball.csv`
+
+    Returns:
+    ---------
+    - pandas.DataFrame of the in-sample and out-of-sample salary estimates
+    """
+
+    data = pandas.DataFrame.from_csv(file_path, index_col = None)
+    data['age'] = data['yearID'] - data['birthYear']
+    cols = ['G_batting', 'AB', 'R', 'H', 'X2B', 'X3B', 'HR', 'RBI','SB', 
+            'CS', 'BB', 'SO', 'IBB', 'HBP', 'SH', 'SF', 'GIDP', 'teamID',
+            'salary', 'yearID', 'age']
+    all_data = data[cols].copy()
+    all_data.dropna(inplace = True)
+    teams = pandas.get_dummies(all_data['teamID'])
+    x_cols = all_data.columns[map(lambda x: x not in ['teamID', 'salary'],
+                                  all_data.columns)]
+    
+    #create log-transform
+    d = {}
+
+    for col in x_cols:
+        tmp = all_data[col].copy()
+        tmp[tmp == 0] = 1.
+        d[col] = tmp
+    
+    xs = pandas.DataFrame(d).join(teams)
+
+    ys = all_data['salary'].copy()
+    ys[ys == 0.] = 1
+    ys = ys.apply(numpy.log)
+
+    N = xs.shape[0]
+    isi, in_sample, osi, out_sample = create_in_out_samples(xs, N/2)
+    d = {}
+    for year in all_data['yearID'].unique():
+        no_yr = in_sample.columns.drop('yearID')
+        d_too = {}
+        is_yr = in_sample['yearID'] == year
+        os_yr = out_sample['yearID'] == year
+        ols = pandas.ols(x = in_sample.loc[is_yr, no_yr], y = ys[isi][is_yr])
+        df = ols.summary_as_matrix
+        is_sig = df.loc['p-value', df.loc['p-value', :] < .01].index
+
+        if 'intercept' in is_sig:
+            is_sig = is_sig.drop('intercept')
+
+        clf = ensemble.RandomForestRegressor(n_estimators = 15)
+        clf.fit(in_sample.loc[is_yr, is_sig], ys[isi][is_yr])
+        is_score = clf.score(in_sample.loc[is_yr, is_sig], ys[isi][is_yr])
+        d_too['is-r2'] = is_score
+        os_score = clf.score(out_sample.loc[os_yr, is_sig], ys[osi][os_yr])
+        d_too['os-r2'] = os_score
+        eps = ys[osi][os_yr].sub(clf.predict(out_sample.loc[os_yr, is_sig]))
+        d_too['mae'] = eps.abs().sum()/(len(ys[osi][os_yr]) - 2.)
+
         d[year] = pandas.Series(d_too)
 
     return pandas.DataFrame(d).transpose()
