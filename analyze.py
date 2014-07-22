@@ -138,9 +138,10 @@ def year_based_significance_log_regression(file_path):
         is_score = clf.score(in_sample.loc[is_yr, is_sig], ys[isi][is_yr])
         d_too['is-r2'] = is_score
         os_score = clf.score(out_sample.loc[os_yr, is_sig], ys[osi][os_yr])
-        d_too['os-r2'] = os_score
-        eps = ys[osi][os_yr].sub(clf.predict(out_sample.loc[os_yr, is_sig]))
-        d_too['mae'] = eps.abs().sum()/(len(ys[osi][os_yr]) - 2.)
+        d_too['os-r2'] = os_score        
+        eps = (ys[osi][os_yr].apply(numpy.exp) - numpy.exp(clf.predict(
+            out_sample.loc[os_yr, is_sig]))).abs()
+        d_too['mae'] = eps.sum()/(len(ys[osi][os_yr]) - 2.)
 
         d[year] = pandas.Series(d_too)
 
