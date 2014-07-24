@@ -26,6 +26,22 @@ COLS = ['G_batting', 'AB', 'R', 'H', 'X2B', 'X3B', 'HR', 'RBI',
 
 
 def load_data(data_folder_path):
+    """
+    Create a joined `DataFrame` using 'baseball.csv'
+    and 'Pitchers.csv' files, while renaming interesecting Pitcher
+    columns 'P_'+<col-name> and adding the 'is_pitcher' column for
+    Pitchers
+
+    Args:
+    ------
+    - data_folder_path: the filepath to the data folder that contains
+      the 'baseball.csv' and 'Pitchers.csv' data files
+
+    Returns:
+    --------
+    `pandas.DataFrame` of the joined 'batting' and 'pitching' statistics
+    
+    """
     batting = pandas.DataFrame.from_csv(data_folder_path + '/baseball.csv',
                                         index_col = None)
     pitching = pandas.DataFrame.from_csv(data_folder_path + '/pitching.csv',
@@ -37,25 +53,62 @@ def load_data(data_folder_path):
     #find the intersecting columns and make them "pitching, unique"
     secting = (batting.columns & pitching.columns).drop(['playerID',
             'yearID', 'teamID'])
-
     sect_d =  dict([('P_' + val, val) for val in secting])
-    
     for key, val in sect_d.iteritems():
         pitching[key] = pitching[val].copy()
 
     #remove the columns that overlap
     pitching.drop( sect_d.values(), axis = 1, inplace = True)
-    
     agg = pandas.merge( batting, pitching, how = 'outer',
                         on = ['teamID', 'yearID', 'playerID'])
+    agg['is_pitcher'].fillna(0, inplace = True)
+    agg['age'] = agg['yearID'] - agg['birthYear']
+    agg.drop(['lahmanID', u'managerID', u'hofID', u'birthYear', u'birthMonth',
+              u'birthDay', u'birthCountry', u'birthState', u'birthCity',
+              u'deathYear', u'deathMonth', u'deathDay', u'deathCountry',
+              u'deathState', u'deathCity', u'nameFirst', u'nameLast',
+              u'nameNote', u'nameGiven', u'nameNick', u'weight', u'height',
+              u'bats', u'throws', u'debut', u'finalGame', u'college',
+              u'lahman40ID', u'lahman45ID', u'retroID', u'holtzID',
+              u'bbrefID', u'deathDate', u'birthDate'], axis = 1,
+              inplace = True)
+    
     return agg
 
-    
+def regress_by_year(isi, in_sample, osi, out_sample):
+    """
+    Docstring if I can get it working....
+    """
+    for year in in_sample['yearID'].unique():
+        no_yr = in_sample.columns.drop('yearID')
+        d_too = {}
+        is_yr = in_sample['yearID'] == year
+        os_yr = out_sample['yearID'] == year
+        ols = pandas.ols(x = in_sample.loc[is_yr, no_yr], y = ys[isi][is_yr])
+        df = ols.summary_as_matrix
+        is_sig = df.loc['p-value', df.loc['p-value', :] < .01].index
+
+        if 'intercept' in is_sig:
+            is_sig = is_sig.drop('intercept')
+
+        clf = ensemble.RandomForestRegressor(n_estimators = 15)
+        clf.fit(in_sample.loc[is_yr, is_sig], ys[isi][is_yr])
+        is_score = clf.score(in_sample.loc[is_yr, is_sig], ys[isi][is_yr])
+        d_too['is-r2'] = is_score
+        os_score = clf.score(out_sample.loc[os_yr, is_sig], ys[osi][os_yr])
+        d_too['os-r2'] = os_score
+        eps = ys[osi][os_yr].sub(clf.predict(out_sample.loc[os_yr, is_sig]))
+        d_too['mae'] = eps.abs().sum()/(len(ys[osi][os_yr]) - 2.)
+        
+        d[year] = pandas.Series(d_too)
+
+    return pandas.DataFrame(d).transpose()
     
 def year_based_significance_regression(file_path):
     """
-    Run a year-based multivariate regression that uses only the significant variables
-    as well as Random Forest Regression Trees to estimate the parameters
+    Run a year-based multivariate regression that uses only the
+    significant variables as well as Random Forest Regression Trees to
+    estimate the parameters
 
     Args:
     ------
@@ -109,8 +162,9 @@ def year_based_significance_regression(file_path):
 
 def year_based_significance_log_regression(file_path):
     """
-    Run a year-based multivariate regression that uses only the significant variables
-    as well as Random Forest Regression Trees to estimate the parameters
+    Run a year-based multivariate regression that uses only the significant
+    variables as well as Random Forest Regression Trees to estimate the
+    parameters
 
     Args:
     ------
