@@ -24,6 +24,34 @@ COLS = ['G_batting', 'AB', 'R', 'H', 'X2B', 'X3B', 'HR', 'RBI',
         'SB', 'CS', 'BB', 'SO', 'IBB', 'HBP', 'SH', 'SF', 'GIDP', 'teamID',
         'salary', 'yearID']
 
+
+def load_data(data_folder_path):
+    batting = pandas.DataFrame.from_csv(data_folder_path + '/baseball.csv',
+                                        index_col = None)
+    pitching = pandas.DataFrame.from_csv(data_folder_path + '/pitching.csv',
+                                        index_col = None)
+
+    #all the players in the pitching file are pitchers.... duh
+    pitching['is_pitcher'] = 1
+    
+    #find the intersecting columns and make them "pitching, unique"
+    secting = (batting.columns & pitching.columns).drop(['playerID',
+            'yearID', 'teamID'])
+
+    sect_d =  dict([('P_' + val, val) for val in secting])
+    
+    for key, val in sect_d.iteritems():
+        pitching[key] = pitching[val].copy()
+
+    #remove the columns that overlap
+    pitching.drop( sect_d.values(), axis = 1, inplace = True)
+    
+    agg = pandas.merge( batting, pitching, how = 'outer',
+                        on = ['teamID', 'yearID', 'playerID'])
+    return agg
+
+    
+    
 def year_based_significance_regression(file_path):
     """
     Run a year-based multivariate regression that uses only the significant variables
